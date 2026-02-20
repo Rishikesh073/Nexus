@@ -2,24 +2,22 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api"; 
 import { useAuth } from "../contexts/AuthContext";
-import MiniLineChart from "../components/MiniLineChart";
-// Note: If you still use MiniBarChart in the analytics tab, keep the import.
-// import MiniBarChart from "../components/MiniBarChart";
 
 export default function ClientDashboard() {
   const navigate = useNavigate();
-  const { currentUser, logout } = useAuth(); // Grabbing the live Google user and logout function!
+  const { currentUser, logout } = useAuth(); 
   const [activeTab, setActiveTab] = useState("overview");
   
   // LIVE DATA STATES
+  const [clientData, setClientData] = useState(null); 
   const [campaigns, setCampaigns] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [chatHistory, setChatHistory] = useState([]);
   const [chatMsg, setChatMsg] = useState("");
-  const [myRequests, setMyRequests] = useState([]); // <-- REQUESTS STATE
+  const [myRequests, setMyRequests] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-  // AI INTAKE FORM STATES
+  // AI INTAKE FORM STATES (Fully Restored)
   const [showIntakeForm, setShowIntakeForm] = useState(false);
   const [intakeData, setIntakeData] = useState({
     businessUrl: "", 
@@ -31,46 +29,40 @@ export default function ClientDashboard() {
   });
 
   const availableGoals = [
-    "Lead Generation", 
-    "Direct E-commerce Sales", 
-    "Brand Awareness", 
-    "Website Traffic", 
-    "App Installs", 
-    "Local Store Foot Traffic",
-    "Community Engagement"
+    "Lead Generation", "Direct E-commerce Sales", "Brand Awareness", 
+    "Website Traffic", "App Installs", "Local Store Foot Traffic", "Community Engagement"
   ];
-
   const availableChannels = [
-    "Google Ads", 
-    "Meta (Facebook/Instagram)", 
-    "Instagram (Specific)", 
-    "LinkedIn B2B", 
-    "SEO", 
-    "Email Automation", 
-    "TikTok"
+    "Google Ads", "Meta (Facebook/Instagram)", "Instagram (Specific)", 
+    "LinkedIn B2B", "SEO", "Email Automation", "TikTok"
   ];
 
   // FETCH LIVE DATA ON MOUNT
   useEffect(() => {
     const fetchData = async () => {
+      if (!currentUser) return;
       try {
-        const [campRes, taskRes, msgRes, reqRes] = await Promise.all([
-          api.get('/campaigns'),
-          api.get('/tasks'),
-          api.get('/messages'),
-          api.get('/service-requests') // <-- FETCH REQUESTS
+        const safeGet = (url) => api.get(url).catch(() => ({ data: [] }));
+
+        const [campRes, reqRes, clientsRes, taskRes, msgRes] = await Promise.all([
+          safeGet('/campaigns'),
+          safeGet('/service-requests'),
+          safeGet('/clients'),
+          safeGet('/tasks'),
+          safeGet('/messages')
         ]);
         
-        setCampaigns(campRes.data);
-        setTasks(taskRes.data);
-        setChatHistory(msgRes.data);
+        // STRICT DATA SILOS
+        setCampaigns(campRes.data.filter(c => c.clientId === currentUser.uid));
+        setMyRequests(reqRes.data.filter(r => r.clientId === currentUser.uid));
+        setTasks(taskRes.data.filter(t => t.clientId === currentUser.uid));
+        setChatHistory(msgRes.data.filter(m => m.clientId === currentUser.uid || m.to === currentUser.uid));
         
-        if (currentUser) {
-          setMyRequests(reqRes.data.filter(r => r.clientId === currentUser.uid));
-        }
+        const myProfile = clientsRes.data.find(c => c.uid === currentUser.uid);
+        if (myProfile) setClientData(myProfile);
 
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Critical error fetching data:", error);
       } finally {
         setLoading(false);
       }
@@ -79,78 +71,57 @@ export default function ClientDashboard() {
   }, [currentUser]);
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      navigate("/login"); 
-    } catch (error) {
-      console.error("Failed to log out", error);
-    }
+    await logout();
+    navigate("/login"); 
   };
 
   const sendMessage = async () => {
     if (!chatMsg.trim()) return;
-    
     const newMsg = { 
+      clientId: currentUser.uid,
       from: currentUser?.displayName || "User", 
-      msg: chatMsg, 
-      type: "user", 
-      unread: true, 
+      msg: chatMsg, type: "user", unread: true, 
       avatar: currentUser?.photoURL || "U",
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-    
     setChatHistory(h => [...h, newMsg]);
     setChatMsg("");
-
-    try {
-      await api.post('/messages', newMsg);
-    } catch (error) {
-      console.error("Failed to send message", error);
-    }
+    try { await api.post('/messages', newMsg); } catch (e) {}
   };
 
   const submitIntakeForm = async (e) => {
     e.preventDefault();
     try {
       await api.post('/service-requests', {
-        clientId: currentUser?.uid,
-        clientName: currentUser?.displayName,
+        clientId: currentUser?.uid, 
+        clientName: currentUser?.displayName, 
         clientEmail: currentUser?.email,
-        requirements: intakeData,
-        status: "pending_admin_review",
+        requirements: intakeData, 
+        status: "pending_admin_review", 
         submittedAt: new Date().toISOString()
       });
-      
       setShowIntakeForm(false);
-      
-      // Auto-refresh the requests so the UI switches to "Pending" instantly
-      const reqRes = await api.get('/service-requests');
+      const reqRes = await api.get('/service-requests').catch(() => ({ data: [] }));
       setMyRequests(reqRes.data.filter(r => r.clientId === currentUser?.uid));
-      
-      alert("Requirements sent to the NEXUS AI Agent. Our Admin team will review and approve shortly!");
     } catch (error) {
-      console.error("Error submitting form", error);
-      alert("There was an error submitting your request. Please try again.");
+      alert("Backend Error 500: Unable to save. Check your Node server connection.");
     }
   };
 
-  // DYNAMIC CALCULATIONS
   const totalSpend = campaigns.reduce((sum, c) => sum + (Number(c.spend) || 0), 0);
   const totalLeads = campaigns.reduce((sum, c) => sum + (Number(c.leads) || 0), 0);
   const liveCampaignsCount = campaigns.filter(c => c.status === "live").length;
-
+  
   const sidebarItems = [
     { id: "overview", icon: "⊡", label: "Overview" },
-    { id: "campaigns", icon: "◉", label: "Campaigns" },
-    { id: "analytics", icon: "▲", label: "Analytics" },
+    { id: "campaigns", icon: "◉", label: "Live Campaigns" },
+    { id: "analytics", icon: "▲", label: "Analytics" }, 
     { id: "tasks", icon: "☑", label: "Tasks" },
-    { id: "chat", icon: "✉", label: "Chat" },
-    { id: "profile", icon: "◆", label: "Profile" },
+    { id: "chat", icon: "✉", label: "Support Chat" },
+    { id: "profile", icon: "◆", label: "My Profile" },
   ];
 
-  if (loading) {
-    return <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>LOADING NEXUS SECURE PORTAL...</div>;
-  }
+  if (loading) return <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>LOADING NEXUS SECURE PORTAL...</div>;
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
@@ -161,8 +132,6 @@ export default function ClientDashboard() {
           <span style={{ fontFamily: "'Bebas Neue'", fontSize: "20px", letterSpacing: "0.1em" }}>NEXUS</span>
         </div>
 
-        <div style={{ fontSize: "10px", color: "var(--text-dimmer)", letterSpacing: "0.15em", textTransform: "uppercase", fontFamily: "'JetBrains Mono'", padding: "0 12px", marginBottom: "12px" }}>Client Portal</div>
-
         <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           {sidebarItems.map(item => (
             <div key={item.id} className={`sidebar-item ${activeTab === item.id ? "active" : ""}`} onClick={() => setActiveTab(item.id)}>
@@ -172,32 +141,18 @@ export default function ClientDashboard() {
           ))}
         </nav>
 
-        {/* LIVE GOOGLE PROFILE SECTION */}
         <div style={{ marginTop: "auto", padding: "12px", borderRadius: "12px", background: "var(--black3)", border: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "var(--border)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-              {currentUser?.photoURL ? (
-                <img src={currentUser.photoURL} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <span style={{ fontSize: "14px", fontWeight: 700 }}>U</span>
-              )}
+               <span style={{ fontSize: "14px", fontWeight: 700 }}>{currentUser?.displayName?.charAt(0) || "U"}</span>
             </div>
-            <div>
-              <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "140px" }}>
-                {currentUser?.displayName || "NEXUS Client"}
-              </div>
-              <div style={{ fontSize: "11px", color: "var(--text-dimmer)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "140px" }}>
-                {currentUser?.email}
-              </div>
+            <div style={{ overflow: "hidden" }}>
+              <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{currentUser?.displayName}</div>
+              <div style={{ fontSize: "10px", color: "var(--orange)", fontFamily: "'JetBrains Mono'", letterSpacing: "0.1em", textTransform: "uppercase" }}>TIER: {clientData?.plan || "PENDING"}</div>
             </div>
           </div>
         </div>
 
-        <button className="btn-ghost" onClick={() => navigate("/")} style={{ marginTop: "12px", width: "100%", padding: "10px", borderRadius: "8px", fontSize: "12px" }}>
-          ← Back to Site
-        </button>
-
-        {/* LOG OUT BUTTON */}
         <button className="btn-ghost" onClick={handleLogout} style={{ marginTop: "8px", width: "100%", padding: "10px", borderRadius: "8px", fontSize: "12px", color: "var(--neon-pink)", borderColor: "rgba(255,0,110,0.3)" }}>
           LOG OUT
         </button>
@@ -205,57 +160,36 @@ export default function ClientDashboard() {
 
       {/* Main content */}
       <div style={{ flex: 1, overflow: "auto", background: "var(--black)" }}>
-        {/* Header */}
         <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "rgba(8,8,8,0.9)", backdropFilter: "blur(20px)", zIndex: 100 }}>
-          <div>
-            <h1 style={{ fontSize: "24px", fontWeight: 700 }}>
-              {activeTab === "overview" && "Dashboard Overview"}
-              {activeTab === "campaigns" && "My Campaigns"}
-              {activeTab === "analytics" && "Analytics"}
-              {activeTab === "tasks" && "Task Board"}
-              {activeTab === "chat" && "Support Chat"}
-              {activeTab === "profile" && "My Profile"}
-            </h1>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", borderRadius: "20px", background: "rgba(0,255,148,0.1)", border: "1px solid rgba(0,255,148,0.2)" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--neon-green)", animation: "pulse-green 2s infinite" }} />
-              <span style={{ fontSize: "12px", color: "var(--neon-green)", fontFamily: "'JetBrains Mono'" }}>{liveCampaignsCount} CAMPAIGNS LIVE</span>
-            </div>
+          <div><h1 style={{ fontSize: "24px", fontWeight: 700 }}>{sidebarItems.find(s => s.id === activeTab)?.label}</h1></div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", borderRadius: "20px", background: "rgba(0,255,148,0.1)", border: "1px solid rgba(0,255,148,0.2)" }}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--neon-green)", animation: "pulse-green 2s infinite" }} />
+            <span style={{ fontSize: "12px", color: "var(--neon-green)", fontFamily: "'JetBrains Mono'" }}>{liveCampaignsCount} CAMPAIGNS LIVE</span>
           </div>
         </div>
 
         <div style={{ padding: "32px" }}>
+          
           {/* OVERVIEW TAB */}
           {activeTab === "overview" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              {/* KPI cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-                {[
-                  { label: "Active Campaigns", value: liveCampaignsCount, color: "var(--neon-green)", icon: "▲" },
-                  { label: "Total Ad Spend", value: `$${totalSpend.toLocaleString()}`, color: "var(--neon-blue)", icon: "◈" },
-                  { label: "Leads Generated", value: totalLeads.toLocaleString(), color: "var(--orange)", icon: "◉" },
-                  { label: "Pending Tasks", value: tasks.filter(t => t.status !== 'done').length, color: "var(--neon-pink)", icon: "★" },
-                ].map((kpi, i) => (
-                  <div key={i} className="card-hover" style={{ padding: "24px", borderRadius: "16px", background: "var(--card)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                      <span style={{ fontSize: "12px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'" }}>{kpi.label}</span>
-                      <span style={{ color: kpi.color, fontSize: "18px" }}>{kpi.icon}</span>
-                    </div>
-                    <div style={{ fontFamily: "'Bebas Neue'", fontSize: "42px", lineHeight: 1, color: kpi.color }}>
-                      {kpi.value}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+                <div className="card-hover" style={{ padding: "24px", borderRadius: "16px", background: "var(--card)" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'" }}>Active Campaigns</div>
+                  <div style={{ fontFamily: "'Bebas Neue'", fontSize: "42px", color: "var(--neon-green)" }}>{campaigns.length}</div>
+                </div>
+                <div className="card-hover" style={{ padding: "24px", borderRadius: "16px", background: "var(--card)" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'" }}>Total Ad Spend</div>
+                  <div style={{ fontFamily: "'Bebas Neue'", fontSize: "42px", color: "var(--orange)" }}>${totalSpend.toLocaleString()}</div>
+                </div>
+                <div className="card-hover" style={{ padding: "24px", borderRadius: "16px", background: "var(--card)" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'" }}>Leads Generated</div>
+                  <div style={{ fontFamily: "'Bebas Neue'", fontSize: "42px", color: "var(--neon-blue)" }}>{totalLeads.toLocaleString()}</div>
+                </div>
               </div>
 
-              {/* Campaign status & AI INITIALIZER WITH DYNAMIC STATUS */}
-              <div className="card-hover" style={{ padding: "28px", borderRadius: "16px", background: "var(--card)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-                  <h3 style={{ fontWeight: 700, fontSize: "16px" }}>Active Campaigns</h3>
-                  {campaigns.length > 0 && <button className="btn-ghost" style={{ padding: "6px 14px", borderRadius: "6px", fontSize: "12px" }} onClick={() => setActiveTab("campaigns")}>View All</button>}
-                </div>
-                
+              <div className="card-hover" style={{ padding: "28px", borderRadius: "16px", background: "var(--card)", marginTop: "16px" }}>
+                <h3 style={{ fontWeight: 700, fontSize: "16px", marginBottom: "24px" }}>System Status</h3>
                 {campaigns.length === 0 ? (
                   myRequests.length > 0 ? (
                     <div style={{ textAlign: "center", padding: "60px 20px" }}>
@@ -289,67 +223,82 @@ export default function ClientDashboard() {
                     </div>
                   )
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                    {campaigns.slice(0, 3).map((c, i) => (
-                      <div key={i} style={{ padding: "16px", borderRadius: "12px", background: "var(--black3)", border: "1px solid var(--border)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                          <span style={{ fontWeight: 600, fontSize: "14px" }}>{c.name}</span>
-                          <span className={`tag status-${c.status || 'draft'}`}>{(c.status || 'draft').toUpperCase()}</span>
-                        </div>
-                        <div style={{ display: "flex", gap: "20px" }}>
-                          <span style={{ fontSize: "12px", color: "var(--text-dimmer)" }}>Spend: <strong style={{ color: "var(--text)" }}>${(c.spend || 0).toLocaleString()}</strong></span>
-                          <span style={{ fontSize: "12px", color: "var(--text-dimmer)" }}>Leads: <strong style={{ color: "var(--neon-green)" }}>{c.leads || 0}</strong></span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <div style={{ color: "var(--neon-green)", textAlign: "center", padding: "40px" }}>{campaigns.length} Active Campaigns Running Globally</div>
                 )}
               </div>
             </div>
           )}
 
-          {/* CHAT TAB */}
-          {activeTab === "chat" && (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)" }}>
-              <div className="card-hover" style={{ flex: 1, borderRadius: "16px", background: "var(--card)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "var(--orange)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Bebas Neue'", fontSize: "18px" }}>N</div>
-                  <div style={{ fontWeight: 700, fontSize: "15px" }}>Support Chat</div>
-                </div>
+          {/* CAMPAIGNS TAB */}
+          {activeTab === "campaigns" && (
+            <div className="card-hover" style={{ borderRadius: "16px", background: "var(--card)", overflow: "hidden" }}>
+              {campaigns.length === 0 ? <div style={{ padding: "40px", textAlign: "center", color: "var(--text-dimmer)" }}>Waiting for Admin to deploy AI campaigns.</div> : (
+                <table>
+                  <thead>
+                    <tr><th>Campaign</th><th>Channel</th><th>Status</th><th>Spend</th><th>Leads Generated</th></tr>
+                  </thead>
+                  <tbody>
+                    {campaigns.map(c => (
+                      <tr key={c.id}>
+                        <td style={{ fontWeight: 600 }}>{c.name}</td>
+                        <td><span style={{ fontSize: "12px", color: "var(--text-dim)", fontFamily: "'JetBrains Mono'" }}>{c.channel || "Google Ads"}</span></td>
+                        <td><span className={`tag status-live`}>LIVE</span></td>
+                        <td style={{ fontFamily: "'JetBrains Mono'" }}>${c.spend}</td>
+                        <td style={{ fontFamily: "'JetBrains Mono'", color: "var(--neon-green)" }}>{c.leads}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
 
-                <div style={{ flex: 1, overflow: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                  {chatHistory.length === 0 ? (
-                    <div style={{ margin: "auto", color: "var(--text-dimmer)" }}>Start a conversation with our team...</div>
-                  ) : (
-                    chatHistory.map((m, i) => (
-                      <div key={i} style={{ display: "flex", flexDirection: m.type === "user" ? "row-reverse" : "row", gap: "12px", alignItems: "flex-start" }}>
-                        <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: m.type === "user" ? "var(--border)" : "var(--black3)", border: m.type !== "user" ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 700, flexShrink: 0, overflow: "hidden" }}>
-                          {m.type === "user" ? (
-                            currentUser?.photoURL ? <img src={currentUser.photoURL} alt="User" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "U"
-                          ) : "N"}
-                        </div>
-                        <div style={{ maxWidth: "70%" }}>
-                          <div style={{ padding: "12px 16px", borderRadius: m.type === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", background: m.type === "user" ? "var(--orange)" : "var(--black3)", border: m.type !== "user" ? "1px solid var(--border)" : "none", fontSize: "14px", lineHeight: 1.5 }}>
-                            {m.msg}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "var(--text-dimmer)", marginTop: "4px", textAlign: m.type === "user" ? "right" : "left", fontFamily: "'JetBrains Mono'" }}>{m.time}</div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+          {/* DYNAMIC ANALYTICS TAB */}
+          {activeTab === "analytics" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+               <h3 style={{ fontWeight: 700, fontSize: "18px" }}>Campaign Performance Analytics</h3>
+               
+               {campaigns.length === 0 ? (
+                 <div style={{ padding: "40px", textAlign: "center", background: "var(--card)", borderRadius: "16px", border: "1px dashed var(--border)", color: "var(--text-dimmer)" }}>
+                   Waiting for AI Agent to deploy campaigns to generate analytics.
+                 </div>
+               ) : (
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                   {/* Leads Bar Chart */}
+                   <div className="card-hover" style={{ background: "var(--card)", padding: "32px", borderRadius: "16px", border: "1px solid var(--border)" }}>
+                     <h4 style={{ fontSize: "14px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "24px" }}>Leads by Campaign</h4>
+                     <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", height: "250px" }}>
+                       {campaigns.map(c => {
+                         const heightPercentage = Math.min((c.leads / Math.max(...campaigns.map(cp => cp.leads || 1))) * 100, 100) || 5;
+                         return (
+                           <div key={`lead-${c.id}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                             <div style={{ fontSize: "12px", color: "var(--neon-green)", fontFamily: "'JetBrains Mono'" }}>{c.leads}</div>
+                             <div style={{ width: "100%", height: `${heightPercentage}%`, background: "linear-gradient(to top, var(--neon-green), #00ff94)", borderRadius: "4px 4px 0 0", minHeight: "10px", transition: "height 1s ease" }}></div>
+                             <div style={{ fontSize: "10px", color: "var(--text-dimmer)", textAlign: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", width: "100%" }}>{c.name}</div>
+                           </div>
+                         )
+                       })}
+                     </div>
+                   </div>
 
-                <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", gap: "12px" }}>
-                  <input
-                    value={chatMsg}
-                    onChange={e => setChatMsg(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && sendMessage()}
-                    placeholder="Type your message..."
-                    style={{ flex: 1, padding: "12px 16px", borderRadius: "10px", fontSize: "14px" }}
-                  />
-                  <button className="btn-primary" onClick={sendMessage} style={{ padding: "12px 24px", borderRadius: "10px", fontSize: "14px" }}>SEND</button>
-                </div>
-              </div>
+                   {/* Spend Bar Chart */}
+                   <div className="card-hover" style={{ background: "var(--card)", padding: "32px", borderRadius: "16px", border: "1px solid var(--border)" }}>
+                     <h4 style={{ fontSize: "14px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "24px" }}>Ad Spend Allocation</h4>
+                     <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", height: "250px" }}>
+                       {campaigns.map(c => {
+                         const heightPercentage = Math.min((c.spend / Math.max(...campaigns.map(cp => cp.spend || 1))) * 100, 100) || 5;
+                         return (
+                           <div key={`spend-${c.id}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                             <div style={{ fontSize: "12px", color: "var(--orange)", fontFamily: "'JetBrains Mono'" }}>${c.spend}</div>
+                             <div style={{ width: "100%", height: `${heightPercentage}%`, background: "linear-gradient(to top, var(--orange), #FF7A00)", borderRadius: "4px 4px 0 0", minHeight: "10px", transition: "height 1s ease" }}></div>
+                             <div style={{ fontSize: "10px", color: "var(--text-dimmer)", textAlign: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", width: "100%" }}>{c.name}</div>
+                           </div>
+                         )
+                       })}
+                     </div>
+                   </div>
+                 </div>
+               )}
             </div>
           )}
 
@@ -361,23 +310,15 @@ export default function ClientDashboard() {
                   <div key={status} style={{ padding: "20px", borderRadius: "16px", background: "var(--card)", border: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px" }}>
                       <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: status === "done" ? "var(--neon-green)" : status === "progress" ? "var(--orange)" : "var(--text-dimmer)" }} />
-                      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dimmer)" }}>
-                        {status === "progress" ? "In Progress" : status}
-                      </span>
-                      <span style={{ marginLeft: "auto", background: "var(--black3)", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontFamily: "'JetBrains Mono'" }}>
-                        {tasks.filter(t => t.status === status).length}
-                      </span>
+                      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dimmer)" }}>{status}</span>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                       {tasks.filter(t => t.status === status).map((task, i) => (
-                        <div key={i} style={{ padding: "16px", borderRadius: "10px", background: "var(--black3)", border: "1px solid var(--border)", cursor: "pointer" }}>
-                          <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>{task.title}</div>
-                          <div style={{ fontSize: "11px", color: "var(--text-dimmer)", fontFamily: "'JetBrains Mono'" }}>{task.campaign}</div>
+                        <div key={i} style={{ padding: "16px", borderRadius: "10px", background: "var(--black3)", border: "1px solid var(--border)" }}>
+                          <div style={{ fontSize: "13px", fontWeight: 600 }}>{task.title}</div>
                         </div>
                       ))}
-                      {tasks.filter(t => t.status === status).length === 0 && (
-                         <div style={{ fontSize: "12px", color: "var(--text-dimmer)", textAlign: "center", padding: "10px" }}>Empty</div>
-                      )}
+                      {tasks.filter(t => t.status === status).length === 0 && <div style={{ fontSize: "12px", color: "var(--text-dimmer)", textAlign: "center", padding: "10px" }}>Empty</div>}
                     </div>
                   </div>
                 ))}
@@ -385,68 +326,47 @@ export default function ClientDashboard() {
             </div>
           )}
 
-          {/* CAMPAIGNS TAB */}
-          {activeTab === "campaigns" && (
-            <div className="card-hover" style={{ borderRadius: "16px", background: "var(--card)", overflow: "hidden" }}>
-              <div style={{ padding: "24px 24px 0" }}>
-                <h3 style={{ fontWeight: 700, fontSize: "18px", marginBottom: "20px" }}>All Campaigns</h3>
+          {/* CHAT TAB */}
+          {activeTab === "chat" && (
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)" }}>
+              <div className="card-hover" style={{ flex: 1, borderRadius: "16px", background: "var(--card)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div style={{ flex: 1, overflow: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {chatHistory.length === 0 ? <div style={{ margin: "auto", color: "var(--text-dimmer)" }}>Start a conversation with our team...</div> : (
+                    chatHistory.map((m, i) => (
+                      <div key={i} style={{ display: "flex", flexDirection: m.type === "user" ? "row-reverse" : "row", gap: "12px", alignItems: "flex-start" }}>
+                        <div style={{ padding: "12px 16px", borderRadius: m.type === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", background: m.type === "user" ? "var(--orange)" : "var(--black3)", fontSize: "14px" }}>
+                          {m.msg}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", gap: "12px" }}>
+                  <input value={chatMsg} onChange={e => setChatMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMessage()} placeholder="Type your message..." style={{ flex: 1, padding: "12px 16px", borderRadius: "10px", fontSize: "14px" }} />
+                  <button className="btn-primary" onClick={sendMessage} style={{ padding: "12px 24px", borderRadius: "10px", fontSize: "14px" }}>SEND</button>
+                </div>
               </div>
-              {campaigns.length === 0 ? (
-                 <div style={{ padding: "40px", textAlign: "center", color: "var(--text-dimmer)" }}>No campaigns found.</div>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Campaign</th>
-                      <th>Channel</th>
-                      <th>Status</th>
-                      <th>Spend</th>
-                      <th>Leads</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {campaigns.map(c => (
-                      <tr key={c.id}>
-                        <td><div style={{ fontWeight: 600, fontSize: "14px" }}>{c.name}</div></td>
-                        <td><span style={{ fontSize: "12px", color: "var(--text-dim)", fontFamily: "'JetBrains Mono'" }}>{c.channel}</span></td>
-                        <td><span className={`tag status-${c.status || 'draft'}`}>{(c.status || 'draft').toUpperCase()}</span></td>
-                        <td><span style={{ fontFamily: "'JetBrains Mono'", fontSize: "13px" }}>${(c.spend || 0).toLocaleString()}</span></td>
-                        <td><span style={{ fontFamily: "'JetBrains Mono'", fontSize: "13px" }}>{(c.leads || 0).toLocaleString()}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
             </div>
           )}
 
           {/* PROFILE TAB */}
           {activeTab === "profile" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px", maxWidth: "600px" }}>
-              <div className="card-hover" style={{ padding: "32px", borderRadius: "16px", background: "var(--card)" }}>
-                <h3 style={{ fontWeight: 700, marginBottom: "24px" }}>Company Profile</h3>
-                {[
-                  { label: "Company Name", field: "name", value: currentUser?.displayName || "" },
-                  { label: "Contact Person", field: "contact", value: currentUser?.displayName || "" },
-                  { label: "Email Address", field: "email", value: currentUser?.email || "" },
-                ].map((f, i) => (
-                  <div key={i} style={{ marginBottom: "16px" }}>
-                    <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>{f.label}</label>
-                    <input 
-                      defaultValue={f.value} 
-                      placeholder={`Enter ${f.label.toLowerCase()}`}
-                      style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", fontSize: "14px" }} 
-                    />
-                  </div>
-                ))}
-                <button className="btn-primary" style={{ padding: "12px 24px", borderRadius: "8px", fontSize: "13px", marginTop: "8px" }}>SAVE PROFILE</button>
+            <div className="card-hover" style={{ padding: "32px", borderRadius: "16px", background: "var(--card)", maxWidth: "600px" }}>
+              <h3 style={{ fontWeight: 700, marginBottom: "24px" }}>Company Profile</h3>
+              <div style={{ padding: "16px", background: "rgba(255,85,0,0.1)", border: "1px solid rgba(255,85,0,0.3)", borderRadius: "12px", marginBottom: "24px" }}>
+                <div style={{ fontSize: "11px", color: "var(--orange)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", marginBottom: "4px" }}>Active Subscription Tier</div>
+                <div style={{ fontSize: "24px", fontFamily: "'Bebas Neue'", color: "white" }}>{clientData?.plan || "Awaiting Setup"}</div>
+              </div>
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Company Name</label>
+                <input readOnly value={currentUser?.displayName || ""} style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", fontSize: "14px", background: "var(--black3)", border: "1px solid var(--border)", color: "var(--text-dim)" }} />
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* THE AI INTAKE MODAL */}
+      {/* THE AI INTAKE MODAL (Full form restored) */}
       {showIntakeForm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto", padding: "40px 20px" }}>
           <div className="card-hover" style={{ background: "var(--black2)", padding: "40px", borderRadius: "16px", maxWidth: "600px", width: "100%", position: "relative", maxHeight: "90vh", overflowY: "auto" }}>
@@ -454,67 +374,65 @@ export default function ClientDashboard() {
             <button onClick={() => setShowIntakeForm(false)} style={{ position: "absolute", top: "20px", right: "24px", background: "transparent", border: "none", color: "var(--text-dimmer)", fontSize: "24px", cursor: "pointer" }}>×</button>
             
             <h2 style={{ fontFamily: "'Bebas Neue'", fontSize: "32px", marginBottom: "8px", color: "var(--orange)" }}>AI AGENT BRIEFING</h2>
-            <p style={{ fontSize: "13px", color: "var(--text-dim)", marginBottom: "32px" }}>Help our AI understand your business context. Our team reviews all strategies before launch.</p>
+            <p style={{ fontSize: "13px", color: "var(--text-dim)", marginBottom: "32px" }}>Help our AI understand your business context.</p>
             
             <form onSubmit={submitIntakeForm} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
               
               <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Business URL (Optional)</label>
+                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Business URL (Optional)</label>
                 <input 
                   type="url" 
                   placeholder="https://... (Leave blank if not applicable)" 
                   value={intakeData.businessUrl}
                   onChange={e => setIntakeData({...intakeData, businessUrl: e.target.value})}
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px" }} 
+                  style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }} 
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Target Audience Profile *</label>
+                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Target Audience Profile *</label>
                 <textarea 
                   required
-                  placeholder="e.g. Local homeowners aged 30-55 looking for landscaping..." 
+                  placeholder="e.g. Local homeowners aged 30-55..." 
                   value={intakeData.targetAudience}
                   onChange={e => setIntakeData({...intakeData, targetAudience: e.target.value})}
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px", minHeight: "80px", resize: "vertical" }} 
+                  style={{ width: "100%", padding: "12px", borderRadius: "8px", minHeight: "80px", resize: "vertical", background: "var(--black)", color: "white", border: "1px solid var(--border)" }} 
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Monthly Ad Budget ($) *</label>
+                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Monthly Ad Budget ($) *</label>
                 <input 
-                  type="number"
-                  required
-                  placeholder="e.g. 5000" 
+                  type="number" required placeholder="e.g. 5000" 
                   value={intakeData.monthlyBudget}
                   onChange={e => setIntakeData({...intakeData, monthlyBudget: e.target.value})}
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px" }} 
+                  style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }} 
                 />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
                 <div>
-                  <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Primary Goal *</label>
+                  <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Primary Goal *</label>
                   <select 
                     value={intakeData.primaryGoal}
                     onChange={e => setIntakeData({...intakeData, primaryGoal: e.target.value})}
-                    style={{ width: "100%", padding: "12px", borderRadius: "8px" }}>
+                    style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }}>
                     {availableGoals.map(g => <option key={`pri-${g}`} value={g}>{g}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Secondary Goal</label>
+                  <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Secondary Goal</label>
                   <select 
                     value={intakeData.secondaryGoal}
                     onChange={e => setIntakeData({...intakeData, secondaryGoal: e.target.value})}
-                    style={{ width: "100%", padding: "12px", borderRadius: "8px" }}>
+                    style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }}>
                     {availableGoals.map(g => <option key={`sec-${g}`} value={g}>{g}</option>)}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "10px" }}>Preferred Channels *</label>
+                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "10px" }}>Preferred Channels *</label>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                   {availableChannels.map(channel => (
                     <div 

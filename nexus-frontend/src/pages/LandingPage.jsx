@@ -1,15 +1,30 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import Nav from "../components/Nav";
+// DELETED: import Nav from "../components/Nav"; 
 import Ticker from "../components/Ticker";
 import AnimatedCounter from "../components/AnimatedCounter";
-import { services, testimonials, pricing } from "../utils/mockData";
+import { services, testimonials } from "../utils/mockData";
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const [testimonialIdx, setTestimonialIdx] = useState(0);
   const [pricingHover, setPricingHover] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  const pricingTiers = [
+    { 
+      name: "STARTER", price: 199, color: "white", featured: false, desc: "Perfect for local businesses.", 
+      features: ["1 AI Campaign", "Meta Ads Only", "Basic Analytics", "Email Support"] 
+    },
+    { 
+      name: "GROWTH", price: 299, color: "var(--orange)", featured: true, desc: "For scaling operations.", 
+      features: ["3 AI Campaigns", "Meta + Google Ads", "Advanced Analytics", "Priority Support"] 
+    },
+    { 
+      name: "ENTERPRISE", price: 499, color: "white", featured: false, desc: "Full autonomous takeover.", 
+      features: ["Unlimited Campaigns", "Omnichannel Deployment", "Custom AI Models", "Dedicated Slack Channel"] 
+    }
+  ];
 
   useEffect(() => {
     const t = setInterval(() => setTestimonialIdx(i => (i + 1) % testimonials.length), 4000);
@@ -22,11 +37,33 @@ export default function LandingPage() {
     return () => window.removeEventListener("mousemove", h);
   }, []);
 
+  const scrollToSection = (id) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <div>
-      <Nav />
+      {/* DELETED THE <Nav /> TAG FROM HERE */}
+      
       {/* Hero */}
       <div className="grid-bg" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "100px 40px 80px", position: "relative", overflow: "hidden" }}>
+        
+        {/* Navbar */}
+        <nav style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "24px 48px", borderBottom: "1px solid var(--border)", background: "rgba(8,8,8,0.9)", backdropFilter: "blur(20px)", zIndex: 100 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ width: "36px", height: "36px", background: "var(--orange)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Bebas Neue'", fontSize: "20px" }}>N</div>
+            <span style={{ fontFamily: "'Bebas Neue'", fontSize: "24px", letterSpacing: "0.1em" }}>NEXUS AI</span>
+          </div>
+          <div style={{ display: "flex", gap: "32px", alignItems: "center", fontSize: "14px", fontWeight: 500 }}>
+            <button onClick={() => scrollToSection('services')} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer" }}>Services</button>
+            <button onClick={() => scrollToSection('pricing')} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer" }}>Pricing</button>
+            <button className="btn-primary" onClick={() => navigate("/login")} style={{ padding: "10px 24px", borderRadius: "8px" }}>CLIENT PORTAL</button>
+          </div>
+        </nav>
+
         {/* Cursor glow */}
         <div style={{
           position: "fixed", pointerEvents: "none", zIndex: 0,
@@ -36,24 +73,13 @@ export default function LandingPage() {
           borderRadius: "50%", transition: "all 0.1s ease",
         }} />
 
-        {/* Floating orbs */}
-        <div style={{ position: "absolute", top: "20%", left: "10%", width: "300px", height: "300px", background: "radial-gradient(circle, rgba(255,85,0,0.15) 0%, transparent 70%)", borderRadius: "50%", animation: "float 8s ease-in-out infinite", filter: "blur(40px)" }} />
-        <div style={{ position: "absolute", bottom: "20%", right: "10%", width: "250px", height: "250px", background: "radial-gradient(circle, rgba(0,212,255,0.1) 0%, transparent 70%)", borderRadius: "50%", animation: "float2 10s ease-in-out infinite", filter: "blur(40px)" }} />
-
-        <div style={{ textAlign: "center", maxWidth: "900px", position: "relative", zIndex: 1 }}>
+        <div style={{ textAlign: "center", maxWidth: "900px", position: "relative", zIndex: 1, marginTop: "60px" }}>
           <div style={{ marginBottom: "24px" }}>
             <span className="tag status-live" style={{ marginRight: "12px" }}>● LIVE</span>
             <span className="tag" style={{ background: "rgba(255,85,0,0.1)", color: "var(--orange)", border: "1px solid rgba(255,85,0,0.3)" }}>AI-POWERED AGENCY</span>
           </div>
 
-          <h1 style={{
-            fontFamily: "'Bebas Neue', cursive",
-            fontSize: "clamp(60px, 10vw, 130px)",
-            lineHeight: 0.95,
-            letterSpacing: "0.02em",
-            marginBottom: "32px",
-            animation: "slide-up 0.8s ease forwards",
-          }}>
+          <h1 style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "clamp(60px, 10vw, 130px)", lineHeight: 0.95, letterSpacing: "0.02em", marginBottom: "32px", animation: "slide-up 0.8s ease forwards" }}>
             <span style={{ display: "block" }}>DOMINATE</span>
             <span className="neon-text-orange" style={{ display: "block" }}>YOUR MARKET</span>
             <span style={{ display: "block", fontSize: "0.6em", color: "var(--text-dim)", fontFamily: "'Outfit', sans-serif", fontWeight: 300, letterSpacing: "0.05em" }}>WITH AI MARKETING AUTOMATION</span>
@@ -64,15 +90,11 @@ export default function LandingPage() {
           </p>
 
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="btn-primary" onClick={() => navigate("/client")} style={{ padding: "18px 40px", borderRadius: "12px", fontSize: "16px" }}>
+            <button className="btn-primary" onClick={() => navigate("/login")} style={{ padding: "18px 40px", borderRadius: "12px", fontSize: "16px" }}>
               START YOUR CAMPAIGN →
-            </button>
-            <button className="btn-ghost" style={{ padding: "18px 40px", borderRadius: "12px", fontSize: "16px" }}>
-              WATCH CASE STUDY ▶
             </button>
           </div>
 
-          {/* Stats */}
           <div style={{ display: "flex", gap: "60px", justifyContent: "center", marginTop: "80px", flexWrap: "wrap" }}>
             {[
               { value: 320, suffix: "%", label: "Avg ROI" },
@@ -91,11 +113,10 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* Ticker */}
       <Ticker />
 
       {/* Services Grid */}
-      <section style={{ padding: "120px 60px", maxWidth: "1200px", margin: "0 auto" }}>
+      <section id="services" style={{ padding: "120px 60px", maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px" }}>
           <p className="tag status-live" style={{ marginBottom: "20px", display: "inline-block" }}>OUR ARSENAL</p>
           <h2 style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "72px", lineHeight: 1, letterSpacing: "0.02em" }}>
@@ -108,50 +129,13 @@ export default function LandingPage() {
               <div style={{ fontSize: "36px", marginBottom: "16px", filter: `drop-shadow(0 0 10px ${s.color})` }}>{s.icon}</div>
               <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "28px", color: s.color, letterSpacing: "0.05em", marginBottom: "8px" }}>{s.label}</div>
               <div style={{ fontSize: "13px", color: "var(--text-dimmer)", lineHeight: 1.6 }}>AI-optimized campaigns with real-time performance tracking and automated scaling.</div>
-              <div style={{ marginTop: "20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "12px", color: "var(--text-dimmer)" }}>
-                  <span>Performance</span><span style={{ color: s.color }}>94%</span>
-                </div>
-                <div className="progress-bar">
-                  <div className="progress-bar-fill" style={{ width: "94%", background: s.color, boxShadow: `0 0 8px ${s.color}` }} />
-                </div>
-              </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section style={{ padding: "100px 60px", background: "var(--black2)", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(ellipse 80% 50% at 50% 50%, rgba(255,85,0,0.05) 0%, transparent 70%)" }} />
-        <div style={{ maxWidth: "800px", margin: "0 auto", textAlign: "center", position: "relative" }}>
-          <p className="tag" style={{ background: "rgba(255,85,0,0.1)", color: "var(--orange)", border: "1px solid rgba(255,85,0,0.3)", marginBottom: "40px", display: "inline-block" }}>CLIENT RESULTS</p>
-          <div style={{ minHeight: "200px" }}>
-            <div key={testimonialIdx} style={{ animation: "fade-in 0.5s ease" }}>
-              <div style={{ fontSize: "20px", marginBottom: "12px" }}>{"★".repeat(testimonials[testimonialIdx].stars)}</div>
-              <p style={{ fontSize: "24px", lineHeight: 1.6, color: "var(--text)", marginBottom: "32px", fontStyle: "italic" }}>
-                "{testimonials[testimonialIdx].text}"
-              </p>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: "16px" }}>{testimonials[testimonialIdx].name}</div>
-                <div style={{ color: "var(--text-dim)", fontSize: "14px" }}>{testimonials[testimonialIdx].role}</div>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "40px" }}>
-            {testimonials.map((_, i) => (
-              <div key={i} onClick={() => setTestimonialIdx(i)} style={{
-                width: i === testimonialIdx ? "32px" : "8px", height: "8px",
-                borderRadius: "4px", background: i === testimonialIdx ? "var(--orange)" : "var(--border)",
-                cursor: "pointer", transition: "all 0.3s ease",
-              }} />
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Pricing */}
-      <section style={{ padding: "120px 60px" }}>
+      <section id="pricing" style={{ padding: "120px 60px" }}>
         <div style={{ textAlign: "center", marginBottom: "80px" }}>
           <h2 style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "72px", letterSpacing: "0.02em" }}>
             TRANSPARENT PRICING
@@ -159,7 +143,7 @@ export default function LandingPage() {
           <p style={{ color: "var(--text-dim)", fontSize: "18px" }}>No hidden fees. No surprises. Just results.</p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px", maxWidth: "1000px", margin: "0 auto" }}>
-          {pricing.map((plan, i) => (
+          {pricingTiers.map((plan, i) => (
             <div key={i} className="card-hover" onMouseEnter={() => setPricingHover(i)} onMouseLeave={() => setPricingHover(null)}
               style={{
                 padding: "40px", borderRadius: "20px",
@@ -184,8 +168,8 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
-              <button className={plan.featured ? "btn-primary" : "btn-ghost"} onClick={() => navigate("/client")}
-                style={{ width: "100%", padding: "14px", borderRadius: "10px", fontSize: "14px" }}>
+              <button className={plan.featured ? "btn-primary" : "btn-ghost"} onClick={() => navigate("/login")}
+                style={{ width: "100%", padding: "14px", borderRadius: "10px", fontSize: "14px", border: plan.featured ? "none" : "1px solid var(--border)" }}>
                 GET STARTED →
               </button>
             </div>
@@ -200,17 +184,24 @@ export default function LandingPage() {
           <h2 style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "80px", letterSpacing: "0.02em", marginBottom: "24px" }}>
             READY TO <span className="neon-text-orange">SCALE?</span>
           </h2>
-          <p style={{ color: "var(--text-dim)", fontSize: "18px", marginBottom: "48px" }}>Join 140+ companies dominating their markets with NEXUS.</p>
-          <button className="btn-primary" onClick={() => navigate("/client")} style={{ padding: "22px 60px", borderRadius: "14px", fontSize: "18px", animation: "pulse-orange 3s ease-in-out infinite" }}>
-            BOOK A STRATEGY CALL →
+          <p style={{ color: "var(--text-dim)", fontSize: "18px", marginBottom: "48px" }}>Join companies dominating their markets with NEXUS.</p>
+          <button className="btn-primary" onClick={() => navigate("/login")} style={{ padding: "22px 60px", borderRadius: "14px", fontSize: "18px", animation: "pulse-orange 3s ease-in-out infinite" }}>
+            INITIALIZE AI AGENT →
           </button>
         </div>
       </section>
 
-      {/* Footer */}
       <footer style={{ padding: "60px", borderTop: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "20px" }}>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "28px", letterSpacing: "0.1em" }}>NEXUS</div>
+          
+          {/* THE SECRET DOOR: Double click this text to go to admin portal */}
+          <div 
+            onDoubleClick={() => navigate("/admin-login")}
+            style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "28px", letterSpacing: "0.1em", cursor: "pointer", userSelect: "none" }}
+          >
+            NEXUS
+          </div>
+          
           <div style={{ color: "var(--text-dimmer)", fontSize: "13px" }}>© 2024 NEXUS AI Agency. All rights reserved.</div>
           <div style={{ display: "flex", gap: "24px" }}>
             {["Privacy", "Terms", "Contact"].map(item => (
