@@ -1,26 +1,28 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../services/api"; 
+import api from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function ClientDashboard() {
   const navigate = useNavigate();
-  const { currentUser, logout } = useAuth(); 
+  const { currentUser, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
-  
+
   // LIVE DATA STATES
-  const [clientData, setClientData] = useState(null); 
+  const [clientData, setClientData] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [chatHistory, setChatHistory] = useState([]);
   const [chatMsg, setChatMsg] = useState("");
-  const [myRequests, setMyRequests] = useState([]); 
+  const [myRequests, setMyRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // AI INTAKE FORM STATES (Fully Restored)
+  // AI INTAKE FORM STATES
   const [showIntakeForm, setShowIntakeForm] = useState(false);
+  const [intakeStep, setIntakeStep] = useState("form"); // "form" | "submitting" | "success"
+  const [intakeError, setIntakeError] = useState("");
   const [intakeData, setIntakeData] = useState({
-    businessUrl: "", 
+    businessUrl: "",
     targetAudience: "",
     monthlyBudget: "",
     primaryGoal: "Lead Generation",
@@ -29,11 +31,11 @@ export default function ClientDashboard() {
   });
 
   const availableGoals = [
-    "Lead Generation", "Direct E-commerce Sales", "Brand Awareness", 
+    "Lead Generation", "Direct E-commerce Sales", "Brand Awareness",
     "Website Traffic", "App Installs", "Local Store Foot Traffic", "Community Engagement"
   ];
   const availableChannels = [
-    "Google Ads", "Meta (Facebook/Instagram)", "Instagram (Specific)", 
+    "Google Ads", "Meta (Facebook/Instagram)", "Instagram (Specific)",
     "LinkedIn B2B", "SEO", "Email Automation", "TikTok"
   ];
 
@@ -51,13 +53,13 @@ export default function ClientDashboard() {
           safeGet('/tasks'),
           safeGet('/messages')
         ]);
-        
+
         // STRICT DATA SILOS
         setCampaigns(campRes.data.filter(c => c.clientId === currentUser.uid));
         setMyRequests(reqRes.data.filter(r => r.clientId === currentUser.uid));
         setTasks(taskRes.data.filter(t => t.clientId === currentUser.uid));
         setChatHistory(msgRes.data.filter(m => m.clientId === currentUser.uid || m.to === currentUser.uid));
-        
+
         const myProfile = clientsRes.data.find(c => c.uid === currentUser.uid);
         if (myProfile) setClientData(myProfile);
 
@@ -72,50 +74,92 @@ export default function ClientDashboard() {
 
   const handleLogout = async () => {
     await logout();
-    navigate("/login"); 
+    navigate("/login");
   };
 
   const sendMessage = async () => {
     if (!chatMsg.trim()) return;
-    const newMsg = { 
+    const newMsg = {
       clientId: currentUser.uid,
-      from: currentUser?.displayName || "User", 
-      msg: chatMsg, type: "user", unread: true, 
+      from: currentUser?.displayName || "User",
+      msg: chatMsg, type: "user", unread: true,
       avatar: currentUser?.photoURL || "U",
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     setChatHistory(h => [...h, newMsg]);
     setChatMsg("");
-    try { await api.post('/messages', newMsg); } catch (e) {}
+    try { await api.post('/messages', newMsg); } catch (e) { }
+  };
+
+  const closeIntakeForm = () => {
+    setShowIntakeForm(false);
+    setIntakeStep("form");
+    setIntakeError("");
   };
 
   const submitIntakeForm = async (e) => {
     e.preventDefault();
+    setIntakeError("");
+
+    // Validation
+    if (intakeData.targetAudience.trim().length < 10) {
+      setIntakeError("Target audience must be at least 10 characters. Be specific!");
+      return;
+    }
+    const budget = Number(intakeData.monthlyBudget);
+    if (!budget || budget < 100) {
+      setIntakeError("Monthly budget must be at least $100.");
+      return;
+    }
+    if (intakeData.channels.length === 0) {
+      setIntakeError("Select at least one marketing channel.");
+      return;
+    }
+    if (intakeData.primaryGoal === intakeData.secondaryGoal) {
+      setIntakeError("Primary and secondary goals must be different.");
+      return;
+    }
+
+    setIntakeStep("submitting");
     try {
       await api.post('/service-requests', {
-        clientId: currentUser?.uid, 
-        clientName: currentUser?.displayName, 
+        clientId: currentUser?.uid,
+        clientName: currentUser?.displayName,
         clientEmail: currentUser?.email,
-        requirements: intakeData, 
-        status: "pending_admin_review", 
+        requirements: {
+          ...intakeData,
+          monthlyBudget: budget
+        },
+        status: "pending_admin_review",
         submittedAt: new Date().toISOString()
       });
-      setShowIntakeForm(false);
+
+      // Refresh requests
       const reqRes = await api.get('/service-requests').catch(() => ({ data: [] }));
       setMyRequests(reqRes.data.filter(r => r.clientId === currentUser?.uid));
+
+      setIntakeStep("success");
+
+      // Auto-close after 3 seconds
+      setTimeout(() => {
+        closeIntakeForm();
+        setIntakeData({ businessUrl: "", targetAudience: "", monthlyBudget: "", primaryGoal: "Lead Generation", secondaryGoal: "Brand Awareness", channels: [] });
+      }, 3000);
+
     } catch (error) {
-      alert("Backend Error 500: Unable to save. Check your Node server connection.");
+      setIntakeStep("form");
+      setIntakeError("Connection failed. Make sure the backend server is running on port 5000.");
     }
   };
 
   const totalSpend = campaigns.reduce((sum, c) => sum + (Number(c.spend) || 0), 0);
   const totalLeads = campaigns.reduce((sum, c) => sum + (Number(c.leads) || 0), 0);
   const liveCampaignsCount = campaigns.filter(c => c.status === "live").length;
-  
+
   const sidebarItems = [
     { id: "overview", icon: "⊡", label: "Overview" },
     { id: "campaigns", icon: "◉", label: "Live Campaigns" },
-    { id: "analytics", icon: "▲", label: "Analytics" }, 
+    { id: "analytics", icon: "▲", label: "Analytics" },
     { id: "tasks", icon: "☑", label: "Tasks" },
     { id: "chat", icon: "✉", label: "Support Chat" },
     { id: "profile", icon: "◆", label: "My Profile" },
@@ -144,7 +188,7 @@ export default function ClientDashboard() {
         <div style={{ marginTop: "auto", padding: "12px", borderRadius: "12px", background: "var(--black3)", border: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "var(--border)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-               <span style={{ fontSize: "14px", fontWeight: 700 }}>{currentUser?.displayName?.charAt(0) || "U"}</span>
+              <span style={{ fontSize: "14px", fontWeight: 700 }}>{currentUser?.displayName?.charAt(0) || "U"}</span>
             </div>
             <div style={{ overflow: "hidden" }}>
               <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{currentUser?.displayName}</div>
@@ -169,7 +213,7 @@ export default function ClientDashboard() {
         </div>
 
         <div style={{ padding: "32px" }}>
-          
+
           {/* OVERVIEW TAB */}
           {activeTab === "overview" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -200,8 +244,8 @@ export default function ClientDashboard() {
                         {myRequests[0]?.status === 'approved' ? "AI AGENT DEPLOYED" : "INITIALIZATION IN PROGRESS"}
                       </h4>
                       <p style={{ color: "var(--text-dim)", fontSize: "14px", marginBottom: "24px", maxWidth: "450px", margin: "0 auto 24px" }}>
-                        {myRequests[0]?.status === 'approved' 
-                          ? "Your strategy has been approved! The AI Agent is currently generating your campaigns. They will appear here shortly." 
+                        {myRequests[0]?.status === 'approved'
+                          ? "Your strategy has been approved! The AI Agent is currently generating your campaigns. They will appear here shortly."
                           : "Your AI Marketing Agent is currently reviewing your business parameters. You will be notified once the strategy is approved and deployed by our team."}
                       </p>
                       <div style={{ display: "inline-block", padding: "8px 16px", background: "var(--black3)", border: "1px solid var(--border)", borderRadius: "20px", fontSize: "12px", color: "var(--text-dimmer)" }}>
@@ -256,49 +300,49 @@ export default function ClientDashboard() {
           {/* DYNAMIC ANALYTICS TAB */}
           {activeTab === "analytics" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-               <h3 style={{ fontWeight: 700, fontSize: "18px" }}>Campaign Performance Analytics</h3>
-               
-               {campaigns.length === 0 ? (
-                 <div style={{ padding: "40px", textAlign: "center", background: "var(--card)", borderRadius: "16px", border: "1px dashed var(--border)", color: "var(--text-dimmer)" }}>
-                   Waiting for AI Agent to deploy campaigns to generate analytics.
-                 </div>
-               ) : (
-                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-                   {/* Leads Bar Chart */}
-                   <div className="card-hover" style={{ background: "var(--card)", padding: "32px", borderRadius: "16px", border: "1px solid var(--border)" }}>
-                     <h4 style={{ fontSize: "14px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "24px" }}>Leads by Campaign</h4>
-                     <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", height: "250px" }}>
-                       {campaigns.map(c => {
-                         const heightPercentage = Math.min((c.leads / Math.max(...campaigns.map(cp => cp.leads || 1))) * 100, 100) || 5;
-                         return (
-                           <div key={`lead-${c.id}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                             <div style={{ fontSize: "12px", color: "var(--neon-green)", fontFamily: "'JetBrains Mono'" }}>{c.leads}</div>
-                             <div style={{ width: "100%", height: `${heightPercentage}%`, background: "linear-gradient(to top, var(--neon-green), #00ff94)", borderRadius: "4px 4px 0 0", minHeight: "10px", transition: "height 1s ease" }}></div>
-                             <div style={{ fontSize: "10px", color: "var(--text-dimmer)", textAlign: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", width: "100%" }}>{c.name}</div>
-                           </div>
-                         )
-                       })}
-                     </div>
-                   </div>
+              <h3 style={{ fontWeight: 700, fontSize: "18px" }}>Campaign Performance Analytics</h3>
 
-                   {/* Spend Bar Chart */}
-                   <div className="card-hover" style={{ background: "var(--card)", padding: "32px", borderRadius: "16px", border: "1px solid var(--border)" }}>
-                     <h4 style={{ fontSize: "14px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "24px" }}>Ad Spend Allocation</h4>
-                     <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", height: "250px" }}>
-                       {campaigns.map(c => {
-                         const heightPercentage = Math.min((c.spend / Math.max(...campaigns.map(cp => cp.spend || 1))) * 100, 100) || 5;
-                         return (
-                           <div key={`spend-${c.id}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                             <div style={{ fontSize: "12px", color: "var(--orange)", fontFamily: "'JetBrains Mono'" }}>${c.spend}</div>
-                             <div style={{ width: "100%", height: `${heightPercentage}%`, background: "linear-gradient(to top, var(--orange), #FF7A00)", borderRadius: "4px 4px 0 0", minHeight: "10px", transition: "height 1s ease" }}></div>
-                             <div style={{ fontSize: "10px", color: "var(--text-dimmer)", textAlign: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", width: "100%" }}>{c.name}</div>
-                           </div>
-                         )
-                       })}
-                     </div>
-                   </div>
-                 </div>
-               )}
+              {campaigns.length === 0 ? (
+                <div style={{ padding: "40px", textAlign: "center", background: "var(--card)", borderRadius: "16px", border: "1px dashed var(--border)", color: "var(--text-dimmer)" }}>
+                  Waiting for AI Agent to deploy campaigns to generate analytics.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                  {/* Leads Bar Chart */}
+                  <div className="card-hover" style={{ background: "var(--card)", padding: "32px", borderRadius: "16px", border: "1px solid var(--border)" }}>
+                    <h4 style={{ fontSize: "14px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "24px" }}>Leads by Campaign</h4>
+                    <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", height: "250px" }}>
+                      {campaigns.map(c => {
+                        const heightPercentage = Math.min((c.leads / Math.max(...campaigns.map(cp => cp.leads || 1))) * 100, 100) || 5;
+                        return (
+                          <div key={`lead-${c.id}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                            <div style={{ fontSize: "12px", color: "var(--neon-green)", fontFamily: "'JetBrains Mono'" }}>{c.leads}</div>
+                            <div style={{ width: "100%", height: `${heightPercentage}%`, background: "linear-gradient(to top, var(--neon-green), #00ff94)", borderRadius: "4px 4px 0 0", minHeight: "10px", transition: "height 1s ease" }}></div>
+                            <div style={{ fontSize: "10px", color: "var(--text-dimmer)", textAlign: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", width: "100%" }}>{c.name}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Spend Bar Chart */}
+                  <div className="card-hover" style={{ background: "var(--card)", padding: "32px", borderRadius: "16px", border: "1px solid var(--border)" }}>
+                    <h4 style={{ fontSize: "14px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "24px" }}>Ad Spend Allocation</h4>
+                    <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", height: "250px" }}>
+                      {campaigns.map(c => {
+                        const heightPercentage = Math.min((c.spend / Math.max(...campaigns.map(cp => cp.spend || 1))) * 100, 100) || 5;
+                        return (
+                          <div key={`spend-${c.id}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                            <div style={{ fontSize: "12px", color: "var(--orange)", fontFamily: "'JetBrains Mono'" }}>${c.spend}</div>
+                            <div style={{ width: "100%", height: `${heightPercentage}%`, background: "linear-gradient(to top, var(--orange), #FF7A00)", borderRadius: "4px 4px 0 0", minHeight: "10px", transition: "height 1s ease" }}></div>
+                            <div style={{ fontSize: "10px", color: "var(--text-dimmer)", textAlign: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", width: "100%" }}>{c.name}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -368,98 +412,167 @@ export default function ClientDashboard() {
 
       {/* THE AI INTAKE MODAL (Full form restored) */}
       {showIntakeForm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto", padding: "40px 20px" }}>
-          <div className="card-hover" style={{ background: "var(--black2)", padding: "40px", borderRadius: "16px", maxWidth: "600px", width: "100%", position: "relative", maxHeight: "90vh", overflowY: "auto" }}>
-            
-            <button onClick={() => setShowIntakeForm(false)} style={{ position: "absolute", top: "20px", right: "24px", background: "transparent", border: "none", color: "var(--text-dimmer)", fontSize: "24px", cursor: "pointer" }}>×</button>
-            
-            <h2 style={{ fontFamily: "'Bebas Neue'", fontSize: "32px", marginBottom: "8px", color: "var(--orange)" }}>AI AGENT BRIEFING</h2>
-            <p style={{ fontSize: "13px", color: "var(--text-dim)", marginBottom: "32px" }}>Help our AI understand your business context.</p>
-            
-            <form onSubmit={submitIntakeForm} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              
-              <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Business URL (Optional)</label>
-                <input 
-                  type="url" 
-                  placeholder="https://... (Leave blank if not applicable)" 
-                  value={intakeData.businessUrl}
-                  onChange={e => setIntakeData({...intakeData, businessUrl: e.target.value})}
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }} 
-                />
-              </div>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", overflow: "auto", padding: "40px 20px" }}>
+          <div className="card-hover" style={{ background: "var(--black2)", padding: "40px", borderRadius: "20px", maxWidth: "600px", width: "100%", position: "relative", maxHeight: "90vh", overflowY: "auto", border: "1px solid rgba(255,85,0,0.15)" }}>
 
-              <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Target Audience Profile *</label>
-                <textarea 
-                  required
-                  placeholder="e.g. Local homeowners aged 30-55..." 
-                  value={intakeData.targetAudience}
-                  onChange={e => setIntakeData({...intakeData, targetAudience: e.target.value})}
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px", minHeight: "80px", resize: "vertical", background: "var(--black)", color: "white", border: "1px solid var(--border)" }} 
-                />
-              </div>
+            <button onClick={closeIntakeForm} style={{ position: "absolute", top: "20px", right: "24px", background: "transparent", border: "none", color: "var(--text-dimmer)", fontSize: "24px", cursor: "pointer", transition: "color 0.2s" }}
+              onMouseEnter={e => e.target.style.color = "var(--orange)"}
+              onMouseLeave={e => e.target.style.color = "var(--text-dimmer)"}
+            >×</button>
 
-              <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Monthly Ad Budget ($) *</label>
-                <input 
-                  type="number" required placeholder="e.g. 5000" 
-                  value={intakeData.monthlyBudget}
-                  onChange={e => setIntakeData({...intakeData, monthlyBudget: e.target.value})}
-                  style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }} 
-                />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                <div>
-                  <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Primary Goal *</label>
-                  <select 
-                    value={intakeData.primaryGoal}
-                    onChange={e => setIntakeData({...intakeData, primaryGoal: e.target.value})}
-                    style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }}>
-                    {availableGoals.map(g => <option key={`pri-${g}`} value={g}>{g}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Secondary Goal</label>
-                  <select 
-                    value={intakeData.secondaryGoal}
-                    onChange={e => setIntakeData({...intakeData, secondaryGoal: e.target.value})}
-                    style={{ width: "100%", padding: "12px", borderRadius: "8px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }}>
-                    {availableGoals.map(g => <option key={`sec-${g}`} value={g}>{g}</option>)}
-                  </select>
+            {/* SUCCESS STATE */}
+            {intakeStep === "success" && (
+              <div style={{ textAlign: "center", padding: "60px 20px", animation: "fade-in 0.5s ease" }}>
+                <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "rgba(0,255,148,0.1)", border: "2px solid var(--neon-green)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: "36px" }}>✓</div>
+                <h2 style={{ fontFamily: "'Bebas Neue'", fontSize: "32px", marginBottom: "12px", color: "var(--neon-green)" }}>BRIEFING RECEIVED</h2>
+                <p style={{ color: "var(--text-dim)", fontSize: "14px", lineHeight: 1.7, maxWidth: "400px", margin: "0 auto 24px" }}>
+                  Your AI Marketing Agent is now analyzing your business parameters. Our admin team will review the strategy and deploy your campaigns.
+                </p>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 20px", background: "rgba(0,255,148,0.08)", border: "1px solid rgba(0,255,148,0.2)", borderRadius: "20px", fontSize: "12px", color: "var(--neon-green)", fontFamily: "'JetBrains Mono'" }}>
+                  <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--neon-green)", animation: "pulse-green 2s infinite" }} />
+                  STATUS: PENDING ADMIN REVIEW
                 </div>
               </div>
+            )}
 
-              <div>
-                <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", display: "block", marginBottom: "10px" }}>Preferred Channels *</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  {availableChannels.map(channel => (
-                    <div 
-                      key={channel}
-                      onClick={() => {
-                        const isSelected = intakeData.channels.includes(channel);
-                        const newChannels = isSelected 
-                          ? intakeData.channels.filter(c => c !== channel) 
-                          : [...intakeData.channels, channel];
-                        setIntakeData({...intakeData, channels: newChannels});
-                      }}
-                      style={{ 
-                        padding: "8px 16px", borderRadius: "20px", fontSize: "12px", cursor: "pointer", transition: "all 0.2s",
-                        background: intakeData.channels.includes(channel) ? "var(--orange)" : "var(--black3)",
-                        color: intakeData.channels.includes(channel) ? "white" : "var(--text-dim)",
-                        border: `1px solid ${intakeData.channels.includes(channel) ? "var(--orange)" : "var(--border)"}`
-                      }}>
-                      {channel}
+            {/* SUBMITTING STATE */}
+            {intakeStep === "submitting" && (
+              <div style={{ textAlign: "center", padding: "80px 20px", animation: "fade-in 0.3s ease" }}>
+                <div style={{ width: "60px", height: "60px", border: "3px solid var(--border)", borderTopColor: "var(--orange)", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 24px" }} />
+                <h2 style={{ fontFamily: "'Bebas Neue'", fontSize: "28px", marginBottom: "8px", color: "var(--orange)" }}>INITIALIZING AI AGENT...</h2>
+                <p style={{ color: "var(--text-dimmer)", fontSize: "13px" }}>Transmitting your business data securely</p>
+              </div>
+            )}
+
+            {/* FORM STATE */}
+            {intakeStep === "form" && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                  <div style={{ width: "40px", height: "40px", background: "var(--orange)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>⚡</div>
+                  <h2 style={{ fontFamily: "'Bebas Neue'", fontSize: "32px", color: "var(--orange)" }}>AI AGENT BRIEFING</h2>
+                </div>
+                <p style={{ fontSize: "13px", color: "var(--text-dim)", marginBottom: "28px", lineHeight: 1.6 }}>Help our AI understand your business context. All strategies are reviewed by our team before launch.</p>
+
+                {intakeError && (
+                  <div style={{ background: "rgba(255,0,110,0.08)", color: "var(--neon-pink)", padding: "12px 16px", borderRadius: "10px", fontSize: "13px", marginBottom: "20px", border: "1px solid rgba(255,0,110,0.2)", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span>⚠</span> {intakeError}
+                  </div>
+                )}
+
+                <form onSubmit={submitIntakeForm} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+                  <div>
+                    <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Business URL <span style={{ color: "var(--text-dimmer)", fontStyle: "italic", textTransform: "none" }}>(optional)</span></label>
+                    <input
+                      type="url"
+                      placeholder="https://yourbusiness.com"
+                      value={intakeData.businessUrl}
+                      onChange={e => setIntakeData({ ...intakeData, businessUrl: e.target.value })}
+                      style={{ width: "100%", padding: "12px 14px", borderRadius: "10px", background: "var(--black)", color: "white", border: "1px solid var(--border)", transition: "border-color 0.2s" }}
+                      onFocus={e => e.target.style.borderColor = "var(--orange)"}
+                      onBlur={e => e.target.style.borderColor = "var(--border)"}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'" }}>Target Audience Profile *</label>
+                      <span style={{ fontSize: "11px", color: intakeData.targetAudience.length >= 10 ? "var(--neon-green)" : "var(--text-dimmer)", fontFamily: "'JetBrains Mono'" }}>{intakeData.targetAudience.length}/10 min</span>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <textarea
+                      required
+                      placeholder="e.g. Local homeowners aged 30-55 in metro areas looking for home renovation services..."
+                      value={intakeData.targetAudience}
+                      onChange={e => setIntakeData({ ...intakeData, targetAudience: e.target.value })}
+                      style={{ width: "100%", padding: "12px 14px", borderRadius: "10px", minHeight: "90px", resize: "vertical", background: "var(--black)", color: "white", border: `1px solid ${intakeData.targetAudience.length >= 10 ? "rgba(0,255,148,0.3)" : "var(--border)"}`, transition: "border-color 0.2s", fontFamily: "inherit", lineHeight: 1.5 }}
+                    />
+                  </div>
 
-              <button type="submit" className="btn-primary" disabled={intakeData.channels.length === 0} style={{ padding: "16px", borderRadius: "8px", fontSize: "15px", marginTop: "12px", opacity: intakeData.channels.length === 0 ? 0.5 : 1 }}>
-                SUBMIT FOR AI ANALYSIS
-              </button>
-            </form>
+                  <div>
+                    <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Monthly Ad Budget ($) *</label>
+                    <input
+                      type="number" required placeholder="Minimum $100"
+                      min="100"
+                      value={intakeData.monthlyBudget}
+                      onChange={e => setIntakeData({ ...intakeData, monthlyBudget: e.target.value })}
+                      style={{ width: "100%", padding: "12px 14px", borderRadius: "10px", background: "var(--black)", color: "white", border: "1px solid var(--border)", transition: "border-color 0.2s" }}
+                      onFocus={e => e.target.style.borderColor = "var(--orange)"}
+                      onBlur={e => e.target.style.borderColor = "var(--border)"}
+                    />
+                    {intakeData.monthlyBudget && Number(intakeData.monthlyBudget) > 0 && (
+                      <div style={{ fontSize: "11px", color: "var(--text-dimmer)", marginTop: "6px", fontFamily: "'JetBrains Mono'" }}>
+                        Estimated daily: <span style={{ color: "var(--neon-green)" }}>${(Number(intakeData.monthlyBudget) / 30).toFixed(0)}/day</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Primary Goal *</label>
+                      <select
+                        value={intakeData.primaryGoal}
+                        onChange={e => setIntakeData({ ...intakeData, primaryGoal: e.target.value })}
+                        style={{ width: "100%", padding: "12px", borderRadius: "10px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }}>
+                        {availableGoals.map(g => <option key={`pri-${g}`} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'", display: "block", marginBottom: "6px" }}>Secondary Goal</label>
+                      <select
+                        value={intakeData.secondaryGoal}
+                        onChange={e => setIntakeData({ ...intakeData, secondaryGoal: e.target.value })}
+                        style={{ width: "100%", padding: "12px", borderRadius: "10px", background: "var(--black)", color: "white", border: "1px solid var(--border)" }}>
+                        {availableGoals.map(g => <option key={`sec-${g}`} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <label style={{ fontSize: "11px", color: "var(--text-dimmer)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono'" }}>Preferred Channels *</label>
+                      <span style={{ fontSize: "11px", color: intakeData.channels.length > 0 ? "var(--neon-green)" : "var(--text-dimmer)", fontFamily: "'JetBrains Mono'" }}>{intakeData.channels.length} selected</span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      {availableChannels.map(channel => (
+                        <div
+                          key={channel}
+                          onClick={() => {
+                            const isSelected = intakeData.channels.includes(channel);
+                            const newChannels = isSelected
+                              ? intakeData.channels.filter(c => c !== channel)
+                              : [...intakeData.channels, channel];
+                            setIntakeData({ ...intakeData, channels: newChannels });
+                          }}
+                          style={{
+                            padding: "8px 16px", borderRadius: "20px", fontSize: "12px", cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            background: intakeData.channels.includes(channel) ? "var(--orange)" : "var(--black3)",
+                            color: intakeData.channels.includes(channel) ? "white" : "var(--text-dim)",
+                            border: `1px solid ${intakeData.channels.includes(channel) ? "var(--orange)" : "var(--border)"}`,
+                            transform: intakeData.channels.includes(channel) ? "scale(1.05)" : "scale(1)",
+                            boxShadow: intakeData.channels.includes(channel) ? "0 0 12px rgba(255,85,0,0.3)" : "none"
+                          }}>
+                          {intakeData.channels.includes(channel) ? "✓ " : ""}{channel}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Summary bar */}
+                  {(intakeData.channels.length > 0 || intakeData.monthlyBudget) && (
+                    <div style={{ padding: "14px 16px", borderRadius: "10px", background: "rgba(255,85,0,0.05)", border: "1px solid rgba(255,85,0,0.15)", fontSize: "12px", color: "var(--text-dim)", fontFamily: "'JetBrains Mono'", display: "flex", flexWrap: "wrap", gap: "16px" }}>
+                      {intakeData.monthlyBudget && <span>Budget: <strong style={{ color: "var(--orange)" }}>${Number(intakeData.monthlyBudget).toLocaleString()}/mo</strong></span>}
+                      {intakeData.channels.length > 0 && <span>Channels: <strong style={{ color: "var(--neon-green)" }}>{intakeData.channels.length}</strong></span>}
+                      <span>Goal: <strong style={{ color: "var(--neon-blue)" }}>{intakeData.primaryGoal}</strong></span>
+                    </div>
+                  )}
+
+                  <button type="submit" className="btn-primary" style={{ padding: "16px", borderRadius: "10px", fontSize: "15px", marginTop: "4px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                    ⚡ SUBMIT FOR AI ANALYSIS
+                  </button>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}

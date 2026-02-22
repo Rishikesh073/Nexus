@@ -58,6 +58,11 @@ body {
   to { transform: rotate(360deg); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 @keyframes grid-move {
   0% { background-position: 0 0; }
   100% { background-position: 60px 60px; }
