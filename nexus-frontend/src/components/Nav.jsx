@@ -34,6 +34,10 @@ export default function Nav() {
       <div style={{ display: "flex", gap: "32px", alignItems: "center" }}>
         {["Services", "Pricing", "Results"].map(item => (
           <span key={item} style={{ fontSize: "14px", fontWeight: 500, color: "var(--text-dim)", cursor: "pointer", transition: "color 0.2s" }}
+            onClick={() => {
+              const el = document.getElementById(item.toLowerCase());
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
             onMouseEnter={e => e.target.style.color = "var(--orange)"}
             onMouseLeave={e => e.target.style.color = "var(--text-dim)"}>{item}</span>
         ))}

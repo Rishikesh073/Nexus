@@ -12,17 +12,17 @@ export default function LandingPage() {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const pricingTiers = [
-    { 
-      name: "STARTER", price: 199, color: "white", featured: false, desc: "Perfect for local businesses.", 
-      features: ["1 AI Campaign", "Meta Ads Only", "Basic Analytics", "Email Support"] 
+    {
+      name: "STARTER", price: 199, color: "white", featured: false, desc: "Perfect for local businesses.",
+      features: ["1 AI Campaign", "Meta Ads Only", "Basic Analytics", "Email Support"]
     },
-    { 
-      name: "GROWTH", price: 299, color: "var(--orange)", featured: true, desc: "For scaling operations.", 
-      features: ["3 AI Campaigns", "Meta + Google Ads", "Advanced Analytics", "Priority Support"] 
+    {
+      name: "GROWTH", price: 299, color: "var(--orange)", featured: true, desc: "For scaling operations.",
+      features: ["3 AI Campaigns", "Meta + Google Ads", "Advanced Analytics", "Priority Support"]
     },
-    { 
-      name: "ENTERPRISE", price: 499, color: "white", featured: false, desc: "Full autonomous takeover.", 
-      features: ["Unlimited Campaigns", "Omnichannel Deployment", "Custom AI Models", "Dedicated Slack Channel"] 
+    {
+      name: "ENTERPRISE", price: 499, color: "white", featured: false, desc: "Full autonomous takeover.",
+      features: ["Unlimited Campaigns", "Omnichannel Deployment", "Custom AI Models", "Dedicated Slack Channel"]
     }
   ];
 
@@ -47,10 +47,10 @@ export default function LandingPage() {
   return (
     <div>
       {/* DELETED THE <Nav /> TAG FROM HERE */}
-      
+
       {/* Hero */}
       <div className="grid-bg" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "100px 40px 80px", position: "relative", overflow: "hidden" }}>
-        
+
         {/* Navbar */}
         <nav style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "24px 48px", borderBottom: "1px solid var(--border)", background: "rgba(8,8,8,0.9)", backdropFilter: "blur(20px)", zIndex: 100 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -134,6 +134,36 @@ export default function LandingPage() {
         </div>
       </section>
 
+
+      {/* Testimonials */}
+      <section id="results" style={{ padding: "100px 60px", background: "var(--black2)", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(ellipse 80% 50% at 50% 50%, rgba(255,85,0,0.05) 0%, transparent 70%)" }} />
+        <div style={{ maxWidth: "800px", margin: "0 auto", textAlign: "center", position: "relative" }}>
+          <p className="tag" style={{ background: "rgba(255,85,0,0.1)", color: "var(--orange)", border: "1px solid rgba(255,85,0,0.3)", marginBottom: "40px", display: "inline-block" }}>CLIENT RESULTS</p>
+          <div style={{ minHeight: "200px" }}>
+            <div key={testimonialIdx} style={{ animation: "fade-in 0.5s ease" }}>
+              <div style={{ fontSize: "20px", marginBottom: "12px" }}>{"★".repeat(testimonials[testimonialIdx].stars)}</div>
+              <p style={{ fontSize: "24px", lineHeight: 1.6, color: "var(--text)", marginBottom: "32px", fontStyle: "italic" }}>
+                "{testimonials[testimonialIdx].text}"
+              </p>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "16px" }}>{testimonials[testimonialIdx].name}</div>
+                <div style={{ color: "var(--text-dim)", fontSize: "14px" }}>{testimonials[testimonialIdx].role}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "40px" }}>
+            {testimonials.map((_, i) => (
+              <div key={i} onClick={() => setTestimonialIdx(i)} style={{
+                width: i === testimonialIdx ? "32px" : "8px", height: "8px",
+                borderRadius: "4px", background: i === testimonialIdx ? "var(--orange)" : "var(--border)",
+                cursor: "pointer", transition: "all 0.3s ease",
+              }} />
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Pricing */}
       <section id="pricing" style={{ padding: "120px 60px" }}>
         <div style={{ textAlign: "center", marginBottom: "80px" }}>
@@ -193,15 +223,15 @@ export default function LandingPage() {
 
       <footer style={{ padding: "60px", borderTop: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "20px" }}>
-          
+
           {/* THE SECRET DOOR: Double click this text to go to admin portal */}
-          <div 
+          <div
             onDoubleClick={() => navigate("/admin-login")}
             style={{ fontFamily: "'Bebas Neue', cursive", fontSize: "28px", letterSpacing: "0.1em", cursor: "pointer", userSelect: "none" }}
           >
             NEXUS
           </div>
-          
+
           <div style={{ color: "var(--text-dimmer)", fontSize: "13px" }}>© 2024 NEXUS AI Agency. All rights reserved.</div>
           <div style={{ display: "flex", gap: "24px" }}>
             {["Privacy", "Terms", "Contact"].map(item => (
